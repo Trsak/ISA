@@ -5,8 +5,8 @@ sources = $(PROG).cpp
 CXX = g++
 RM = rm -f
 
-CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic
-LDFLAGS = -lrt -pthread
+CFLAGS = -std=c++11 -Wall -Wextra
+LDFLAGS = -lrt -pthread -lpcap
 
 OBJFILES = $(sources:.c=.o)
 

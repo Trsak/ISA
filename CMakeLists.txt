@@ -3,4 +3,4 @@ project(ISA)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_executable(ISA dns-export.cpp)
+add_executable(ISA dns-export.cpp headers/dns-export.h headers/pcap-parse.h pcap-parse.cpp)
