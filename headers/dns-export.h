@@ -5,9 +5,34 @@
  */
 
 #include <string>
+#include <vector>
 
 #ifndef ISA_DNS_EXPORT_H
 #define ISA_DNS_EXPORT_H
+
+#define SYSLOG_IPV4 0
+#define SYSLOG_IPV6 1
+
+sockaddr_in syslogServerAddr;
+
+typedef struct syslogServer {
+    int type;
+    struct sockaddr_in ipv4;
+    struct sockaddr_in6 ipv6;
+} sServer;
+
+
+sServer sysServer;
+
+struct Answer {
+    std::string stringAnswer;
+    int count;
+};
+
+std::vector <Answer> answersVector;
+
+//Ethernet Header size
+#define SIZE_ETHERNET 14
 
 /**
  * DNS STRUCTURES
@@ -54,19 +79,22 @@ struct DNS_RECORD {
     unsigned char *Rdata;
 };
 
+void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
+
+void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *data, const unsigned char *links_start);
+
+void sendAllStatsToSyslog();
+
+void printAllStatsToStdout();
+
+std::string name_to_dns_format(std::string name);
+
 std::string name_from_dns_format(std::string dns_name);
 
-std::string parse_name(unsigned char *data, unsigned char *links_start, int *nameLen);
+std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen);
 
-void parse_data(struct DNS_RECORD *data_place, int count, unsigned char *data, unsigned char *links_start);
+std::vector <std::string> explode(std::string const &s, char delim);
 
-void packetHandler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
-/**
- * @brief Starts parsing of pcap file
- * @return void
- */
-void parsePcapFile(const char *pcapFile);
-
-void parsePacketUDP(const u_char *buff, int len);
+void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start);
 
 #endif //ISA_DNS_EXPORT_H
