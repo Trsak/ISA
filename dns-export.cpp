@@ -25,23 +25,34 @@
 #include <algorithm>
 #include <iostream>
 #include <netdb.h>
+#include <thread>
+#include <chrono>
+#include <csignal>
+#include <ctime>
+#include <unistd.h>
+#include <limits.h>
+#include <atomic>
 
 #include "headers/dns-export.h"
 
 using namespace std;
 
 int main(int argc, char **argv) {
+    //Register signals
+    signal(SIGINT, sigtermSignalHandler);
+    signal(SIGUSR1, sigusr1SignalHandler);
+
     //Options variables
-    bool pcapFileSet = false;
-    bool interfaceSet = false;
-    bool syslogServerSet = false;
-    bool isTimeSet = false;
+    pcapFileSet = false;
+    interfaceSet = false;
+    syslogServerSet = false;
+    isTimeSet = false;
 
     //Program argument values
     std::string pcapFile;
     std::string interfaceName;
     std::string syslogServer;
-    int statsTime = 60;
+    statsTime = 60;
 
     int c;
     opterr = 0;
@@ -123,26 +134,36 @@ int main(int argc, char **argv) {
             }
         }
 
-        int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0) {
-            fprintf(stderr, "ERROR: Can not create socket!\n");
-            return 1;
-        }
+        if (sysServer.type == SYSLOG_IPV4) {
+            fd = socket(AF_INET, SOCK_DGRAM, 0);
+            if (fd < 0) {
+                fprintf(stderr, "ERROR: Can't create socket!\n");
+                return 1;
+            }
 
-        const char *msg = "test";
+            bzero(&syslogServerAddrv4, sizeof(syslogServerAddrv4));
+            syslogServerAddrv4.sin_family = AF_INET;
+            syslogServerAddrv4.sin_addr = sysServer.ipv4.sin_addr;
+            syslogServerAddrv4.sin_port = htons(514);
+        } else if (sysServer.type == SYSLOG_IPV6) {
+            fd = socket(AF_INET6, SOCK_DGRAM, 0);
+            if (fd < 0) {
+                fprintf(stderr, "ERROR: Can't create socket!\n");
+                return 1;
+            }
 
-        bzero(&syslogServerAddr, sizeof(syslogServerAddr));
-        syslogServerAddr.sin_family = AF_INET;
-        syslogServerAddr.sin_addr = sysServer.ipv4.sin_addr;
-        syslogServerAddr.sin_port = htons(514);
-        if (sendto(fd, msg, strlen(msg) + 1, 0, (sockaddr * ) & syslogServerAddr, sizeof(syslogServerAddr)) < 0) {
-            perror("cannot send message");
-            return false;
+            bzero(&syslogServerAddrv6, sizeof(syslogServerAddrv6));
+            syslogServerAddrv6.sin6_family = AF_INET6;
+            syslogServerAddrv6.sin6_addr = sysServer.ipv6.sin6_addr;
+            syslogServerAddrv6.sin6_port = htons(514);
         }
     }
 
-    //Create handler
-    pcap_t *handler;
+    //Create thread sending stats to syslog
+    if (syslogServerSet && interfaceSet) {
+        stopFlag = false;
+        syslogThread = std::thread(syslogThreadSend);
+    }
 
     //Create error buff
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -196,12 +217,80 @@ int main(int argc, char **argv) {
         sendAllStatsToSyslog();
     }
 
+    if (syslogThread.joinable()) {
+        stopFlag = true;
+        syslogThread.join();
+    }
+
     return 0;
 }
 
+void sigtermSignalHandler(int signum) {
+    (void) signum;
+
+    //Detach thread and signal it to end
+    if (syslogThread.joinable()) {
+        stopFlag = true;
+        syslogThread.detach();
+    }
+
+    //Close handler
+    if (handler != NULL) {
+        pcap_close(handler);
+    }
+
+    exit(0);
+}
+
+void sigusr1SignalHandler(int signum) {
+    (void) signum;
+    printAllStatsToStdout();
+}
+
+void syslogThreadSend() {
+    while (!stopFlag) {
+        this_thread::sleep_for(std::chrono::seconds(statsTime));
+        sendAllStatsToSyslog();
+        if (stopFlag) {
+            std::terminate();
+        }
+    }
+}
+
 void sendAllStatsToSyslog() {
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, HOST_NAME_MAX);
+
     for (Answer answer : answersVector) {
-        printf("%s %i\n", answer.stringAnswer.c_str(), answer.count);
+        timeval curTime;
+        gettimeofday(&curTime, NULL);
+        int milli = curTime.tv_usec / 1000;
+        char buffer[80];
+        strftime(buffer, 80, "%FT%T", localtime(&curTime.tv_sec));
+        char currentTime[84] = "";
+        sprintf(currentTime, "%s.%dZ", buffer, milli);
+
+        std::string message;
+        message += "<134>1 ";
+        message += currentTime;
+        message += " ";
+        message += hostname;
+        message += " dns-export ";
+        message += answer.stringAnswer;
+        message += " ";
+        message += std::to_string(answer.count);
+
+        if (message.back() != '\0') {
+            message += '\0';
+        }
+
+        if (sysServer.type == SYSLOG_IPV4) {
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv4,
+                   sizeof(syslogServerAddrv4));
+        } else if (sysServer.type == SYSLOG_IPV6) {
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv6,
+                   sizeof(syslogServerAddrv6));
+        }
     }
 }
 
@@ -223,14 +312,15 @@ static void print_buf(const char *title, const unsigned char *buf, size_t buf_le
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     (void) args;
     (void) header;
-    /*static int i = 0;
+    static int i = 0;
     i++;
-    if (i > 3) return;*/
+    printf("\nPACKET: %i\n", i);
 
     struct ether_header *etherHeader;
     struct ip *myIP;
-    struct DNS_HEADER *dnsHeader;
-    int answersCount, questionsCount;
+    const u_char *tcpHeader;
+    const u_char *payload;
+    int tcpHeaderLength;
     u_int sizeIP;
     etherHeader = (struct ether_header *) packet;
 
@@ -241,37 +331,26 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
 
             switch (myIP->ip_p) {
                 case 6: //TCP protocol
+                {
+                    if (header->caplen > 1500) break; //Fragmented TCP packet
+                    tcpHeader = packet + SIZE_ETHERNET + sizeIP;
+                    tcpHeaderLength = ((*(tcpHeader + 12)) & 0xF0) >> 4;
+                    tcpHeaderLength = tcpHeaderLength * 4;
+
+                    int totalHeadersSize = SIZE_ETHERNET + sizeIP + tcpHeaderLength;
+                    payload = packet + totalHeadersSize;
+
+                    parseDNSPacket(payload, true);
                     break;
+                }
                 case 17: //UDP protocol
-                    dnsHeader = (struct DNS_HEADER *) (packet + SIZE_ETHERNET + sizeIP + 8);
-                    answersCount = ntohs(dnsHeader->AnswerCount);
-                    if (answersCount > 0) {
-                        const unsigned char *data =
-                                packet + SIZE_ETHERNET + sizeIP + 8 + sizeof(dnsHeader) + sizeof(DNS_QUESTION);
-
-                        const unsigned char *answers = data;
-                        //We have to skip all Questions in packet
-                        questionsCount = ntohs(dnsHeader->QuestionCount);
-
-                        int QNameLen = 0;
-                        while (questionsCount > 0) {
-                            while (data[QNameLen] != 0) {
-                                QNameLen += 1;
-                            }
-
-                            answers += QNameLen + 1 + sizeof(DNS_QUESTION);
-                            --questionsCount;
-                        }
-
-                        struct DNS_RECORD allAnswers[answersCount];
-                        parseDNS(allAnswers, answersCount, answers, packet + SIZE_ETHERNET + sizeIP + 8);
-                        for (int i = 0; i < answersCount; i++) {
-                            saveAnswer(allAnswers[i], packet + SIZE_ETHERNET + sizeIP + 8);
-                        }
-                    }
+                {
+                    parseDNSPacket(packet + SIZE_ETHERNET + sizeIP + 8, false);
+                    break;
+                }
+                default:
                     break;
             }
-            break;
     }
 }
 
@@ -295,6 +374,7 @@ void saveAnswerToVector(std::string answer) {
 void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
     int answer_type = ntohs(answer.Data->DataType);
     int nameLen = 0;
+    int size = 0;
     std::string finalAnswerString;
 
     switch (answer_type) { //Switch DNS types
@@ -308,20 +388,67 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             break;
         }
         case 2: { //TYPE: NS
-            std::string ns = parse_name(answer.Rdata, links_start, &nameLen);
+            std::string ns = parse_name(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " NS " + ns;
             saveAnswerToVector(finalAnswerString);
             break;
         }
         case 5: { //TYPE: CNAME
-            std::string cname = parse_name(answer.Rdata, links_start, &nameLen);
+            std::string cname = parse_name(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " CNAME " + cname;
             saveAnswerToVector(finalAnswerString);
             break;
         }
+        case 6: { //TYPE: SOA
+            std::string soa = parse_name(answer.Rdata, links_start, &nameLen, &size);
+
+            int offset = size;
+            while (answer.Rdata[offset] != '\0') {
+                offset++;
+            }
+            offset += 1;
+
+            unsigned char *buf = answer.Rdata + offset;
+            std::string mailboxString = parse_name(buf, links_start, &nameLen, &size);
+            printf("SIZE: %i\n", size);
+            offset += size;
+
+            buf = answer.Rdata + offset;
+
+            struct DNS_SOA_DATA *soaData = (struct DNS_SOA_DATA *) (answer.Rdata + offset);
+            std::string sData = std::to_string(ntohl(soaData->SerialNumber)) + " ";
+            sData += std::to_string(ntohl(soaData->RefreshInterval)) + " ";
+            sData += std::to_string(ntohl(soaData->RetryInterval)) + " ";
+            sData += std::to_string(ntohl(soaData->ExpireLimit)) + " ";
+            sData += std::to_string(ntohl(soaData->MinimumTTL));
+
+            finalAnswerString = answer.DataName + " SOA " + "\"" + soa + " " + mailboxString + sData + "\"";
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
         case 12: { //TYPE: PTR
-            std::string ptr = parse_name(answer.Rdata, links_start, &nameLen);
+            std::string ptr = parse_name(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " PTR " + ptr;
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
+        case 15: { //TYPE: MX
+            struct DNS_MX_DATA *mxData = (struct DNS_MX_DATA *) (answer.Rdata);
+            std::string mx = parse_name(answer.Rdata + 2, links_start, &nameLen, &size);
+            finalAnswerString =
+                    answer.DataName + " MX " + "\"" + std::to_string(ntohs(mxData->Preference)) + " " + mx + "\"";
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
+        case 16: { //TYPE: TXT
+            int length = answer.Rdata[0];
+
+            std::string txtMessage;
+            for (int i = 1; i <= length; i += 1) {
+                txtMessage.push_back(answer.Rdata[i]);
+            }
+
+            finalAnswerString = answer.DataName + " TXT " + "\"" + txtMessage + "\"";
             saveAnswerToVector(finalAnswerString);
             break;
         }
@@ -334,17 +461,59 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             saveAnswerToVector(finalAnswerString);
             break;
         }
+        case 48: { //TYPE: DNSKEY
+            printf("\nYAYA\n");
+            exit(0);
+            break;
+        }
         default:
             break;
     }
 }
 
+void parseDNSPacket(const unsigned char *packet, bool isTCP) {
+    int answersCount, questionsCount;
+    struct DNS_HEADER *dnsHeader;
+
+    if (isTCP) {
+        packet += 2;
+    }
+
+    dnsHeader = (struct DNS_HEADER *) (packet);
+    answersCount = ntohs(dnsHeader->AnswerCount);
+    printf("%i\n", ntohs(dnsHeader->AnswerCount));
+    if (answersCount > 0) {
+        const unsigned char *data =
+                packet + sizeof(dnsHeader) + sizeof(DNS_QUESTION);
+
+        const unsigned char *answers = data;
+        //We have to skip all Questions in packet
+        questionsCount = ntohs(dnsHeader->QuestionCount);
+
+        int QNameLen = 0;
+        while (questionsCount > 0) {
+            while (data[QNameLen] != 0) {
+                QNameLen += 1;
+            }
+
+            answers += QNameLen + 1 + sizeof(DNS_QUESTION);
+            --questionsCount;
+        }
+
+        struct DNS_RECORD allAnswers[answersCount];
+        parseDNS(allAnswers, answersCount, answers, packet);
+        for (int i = 0; i < answersCount; i++) {
+            saveAnswer(allAnswers[i], packet);
+        }
+    }
+}
+
 void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *data, const unsigned char *links_start) {
     int nameLen = 0;
+    int size = 0;
 
     for (int i = 0; i < count; i++) {
-        allAnswers[i].DataName = parse_name(data, links_start, &nameLen);
-        allAnswers[i].DataName = allAnswers[i].DataName.substr(0, allAnswers[i].DataName.size() - 1);
+        allAnswers[i].DataName = parse_name(data, links_start, &nameLen, &size);
         data += nameLen;
 
         allAnswers[i].Data = (struct DNS_RECORD_DATA *) (data);
@@ -361,13 +530,13 @@ void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *dat
     }
 }
 
-std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen) {
+std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen, int *size) {
     bool link = false;
     bool linkDone = false;
 
     int linkValue = 0;
-    int size = 0;
     *nameLen = 0;
+    *size = 0;
     std::string name;
 
     int index = 0;
@@ -376,6 +545,7 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
             linkValue += data[index];
             *nameLen = 2;
             linkDone = true;
+            --(*size);
         } else {
             name += data[index];
         }
@@ -389,9 +559,11 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
                 name = name.substr(0, name.size() - 1);
             }
         }
-
-        ++size;
         index += 1;
+
+        if (!link && !linkDone) {
+            ++(*size);
+        }
 
         if (link && linkDone) {
             data = &links_start[linkValue];
@@ -399,6 +571,7 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
             link = false;
             linkValue = 0;
             linkDone = false;
+            --(*size);
         }
     }
 
@@ -409,6 +582,9 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
         name = name_from_dns_format(name);
     }
 
+    if (name.back() == '.') {
+        name = name.substr(0, name.size() - 1);
+    }
     return name;
 }
 

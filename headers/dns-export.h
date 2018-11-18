@@ -12,8 +12,22 @@
 
 #define SYSLOG_IPV4 0
 #define SYSLOG_IPV6 1
+int fd;
 
-sockaddr_in syslogServerAddr;
+pcap_t *handler;
+
+std::atomic<bool> stopFlag;
+
+std::thread syslogThread;
+
+int statsTime;
+bool pcapFileSet;
+bool interfaceSet;
+bool syslogServerSet;
+bool isTimeSet;
+
+sockaddr_in syslogServerAddrv4;
+sockaddr_in6 syslogServerAddrv6;
 
 typedef struct syslogServer {
     int type;
@@ -64,6 +78,18 @@ struct DNS_QUESTION {
     unsigned short QuestionClass;
 };
 
+struct DNS_MX_DATA {
+    int Preference : 16;
+};
+
+struct DNS_SOA_DATA {
+    unsigned long SerialNumber : 32;
+    long int RefreshInterval : 32;
+    long int RetryInterval : 32;
+    long int ExpireLimit : 32;
+    long int MinimumTTL : 32;
+};
+
 #pragma pack(push, 1)
 struct DNS_RECORD_DATA {
     unsigned short DataType;
@@ -81,17 +107,25 @@ struct DNS_RECORD {
 
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 
+void sigtermSignalHandler(int signum);
+
+void sigusr1SignalHandler(int signum);
+
+void parseDNSPacket(const unsigned char *packet, bool isTCP);
+
 void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *data, const unsigned char *links_start);
 
 void sendAllStatsToSyslog();
 
 void printAllStatsToStdout();
 
+void syslogThreadSend();
+
 std::string name_to_dns_format(std::string name);
 
 std::string name_from_dns_format(std::string dns_name);
 
-std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen);
+std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen, int *size);
 
 std::vector <std::string> explode(std::string const &s, char delim);
 
