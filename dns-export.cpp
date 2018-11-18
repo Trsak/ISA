@@ -400,19 +400,19 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             break;
         }
         case 2: { //TYPE: NS
-            std::string ns = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            std::string ns = parseName(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " NS " + ns;
             saveAnswerToVector(finalAnswerString);
             break;
         }
         case 5: { //TYPE: CNAME
-            std::string cname = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            std::string cname = parseName(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " CNAME " + cname;
             saveAnswerToVector(finalAnswerString);
             break;
         }
         case 6: { //TYPE: SOA
-            std::string soa = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            std::string soa = parseName(answer.Rdata, links_start, &nameLen, &size);
 
             int offset = size;
             while (answer.Rdata[offset] != '\0') {
@@ -421,7 +421,7 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             offset += 1;
 
             unsigned char *buf = answer.Rdata + offset;
-            std::string mailboxString = parse_name(buf, links_start, &nameLen, &size);
+            std::string mailboxString = parseName(buf, links_start, &nameLen, &size);
             offset += size;
 
             buf = answer.Rdata + offset;
@@ -438,14 +438,14 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             break;
         }
         case 12: { //TYPE: PTR
-            std::string ptr = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            std::string ptr = parseName(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " PTR " + ptr;
             saveAnswerToVector(finalAnswerString);
             break;
         }
         case 15: { //TYPE: MX
             struct DNS_MX_DATA *mxData = (struct DNS_MX_DATA *) (answer.Rdata);
-            std::string mx = parse_name(answer.Rdata + 2, links_start, &nameLen, &size);
+            std::string mx = parseName(answer.Rdata + 2, links_start, &nameLen, &size);
             finalAnswerString =
                     answer.DataName + " MX " + "\"" + std::to_string(ntohs(mxData->Preference)) + " " + mx + "\"";
             saveAnswerToVector(finalAnswerString);
@@ -516,7 +516,7 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             finalAnswerString += " " + std::to_string(htons(rrsigData->KeyTag));
 
             int namePos = sizeof(DNS_RRSIG_DATA);
-            std::string signerName = parse_name(answer.Rdata + namePos, links_start, &nameLen, &size);
+            std::string signerName = parseName(answer.Rdata + namePos, links_start, &nameLen, &size);
             finalAnswerString += " " + signerName;
 
             std::string signature;
@@ -534,7 +534,7 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             break;
         }
         case 47: { //TYPE: NSEC
-            std::string nsec = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            std::string nsec = parseName(answer.Rdata, links_start, &nameLen, &size);
             finalAnswerString = answer.DataName + " NSEC " + "\"" + nsec;
 
             int i = size + 1;
@@ -702,7 +702,7 @@ void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *dat
     int size = 0;
 
     for (int i = 0; i < count; i++) {
-        allAnswers[i].DataName = parse_name(data, links_start, &nameLen, &size);
+        allAnswers[i].DataName = parseName(data, links_start, &nameLen, &size);
         data += nameLen;
 
         allAnswers[i].Data = (struct DNS_RECORD_DATA *) (data);
@@ -719,7 +719,7 @@ void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *dat
     }
 }
 
-std::string parse_name(const unsigned char *data, const unsigned char *links_start, int *nameLen, int *size) {
+std::string parseName(const unsigned char *data, const unsigned char *links_start, int *nameLen, int *size) {
     bool link = false;
     bool linkDone = false;
 
@@ -768,7 +768,7 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
         name = ".";
         *nameLen = 1;
     } else {
-        name = name_from_dns_format(name);
+        name = nameFromDnsFormat(name);
     }
 
     if (name.back() == '.') {
@@ -777,7 +777,7 @@ std::string parse_name(const unsigned char *data, const unsigned char *links_sta
     return name;
 }
 
-std::string name_from_dns_format(std::string dns_name) {
+std::string nameFromDnsFormat(std::string dns_name) {
     std::string name;
     unsigned int position = 0;
     std::vector<int> dots;
@@ -802,7 +802,7 @@ std::string name_from_dns_format(std::string dns_name) {
     return name;
 }
 
-std::string name_to_dns_format(std::string name) {
+std::string nameToDnsFormat(std::string name) {
     std::string dns_name;
 
     auto exploded = explode(name, '.');
