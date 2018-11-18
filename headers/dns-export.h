@@ -94,6 +94,18 @@ struct DNS_MX_DATA {
     int Preference : 16;
 };
 
+struct DNS_DS_DATA {
+    unsigned int KeyTag : 16;
+    int Algorithm : 8;
+    int DigestType : 8;
+};
+
+struct DNS_DNSKEY_DATA {
+    unsigned int Flags : 16;
+    int Protocol : 8;
+    int Algorithm : 8;
+};
+
 struct DNS_SOA_DATA {
     unsigned long SerialNumber : 32;
     long int RefreshInterval : 32;

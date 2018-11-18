@@ -313,9 +313,6 @@ static void print_buf(const char *title, const unsigned char *buf, size_t buf_le
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     (void) args;
     (void) header;
-    static int i = 0;
-    i++;
-    printf("\nPACKET: %i\n", i);
 
     struct ether_header *etherHeader;
     struct ip *myIP;
@@ -424,7 +421,6 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
 
             unsigned char *buf = answer.Rdata + offset;
             std::string mailboxString = parse_name(buf, links_start, &nameLen, &size);
-            printf("SIZE: %i\n", size);
             offset += size;
 
             buf = answer.Rdata + offset;
@@ -475,6 +471,36 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             saveAnswerToVector(finalAnswerString);
             break;
         }
+        case 43: { //TYPE: DS
+            struct DNS_DS_DATA *dsData = (struct DNS_DS_DATA *) (answer.Rdata);
+            finalAnswerString = answer.DataName + " DS " + "\"";
+
+            std::string tags = "0x";
+            int i = 0;
+            while (i < 2) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                tags += buff;
+                i++;
+            }
+            finalAnswerString += tags;
+            finalAnswerString += " " + std::to_string(dsData->Algorithm);
+            finalAnswerString += " " + std::to_string(dsData->DigestType);
+
+            std::string digest;
+            i = sizeof(DNS_DS_DATA);
+            while (i < ntohs(answer.Data->DataLength)) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                digest += buff;
+                i++;
+            }
+            finalAnswerString += " " + digest;
+
+            finalAnswerString += "\"";
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
         case 46: { //TYPE: RRSIG
             struct DNS_RRSIG_DATA *rrsigData = (struct DNS_RRSIG_DATA *) (answer.Rdata);
 
@@ -493,7 +519,7 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             finalAnswerString += " " + signerName;
 
             std::string signature;
-            int i = namePos + size - 1;
+            int i = namePos + size + 1;
             while (i < ntohs(answer.Data->DataLength)) {
                 char buff[100];
                 snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
@@ -501,6 +527,56 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
                 i++;
             }
             finalAnswerString += " " + signature;
+
+            finalAnswerString += "\"";
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
+        case 47: { //TYPE: NSEC
+            std::string nsec = parse_name(answer.Rdata, links_start, &nameLen, &size);
+            finalAnswerString = answer.DataName + " NSEC " + "\"" + nsec;
+
+            int i = size + 1;
+            std::string types;
+            while (i < ntohs(answer.Data->DataLength)) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                types += buff;
+                i++;
+            }
+            finalAnswerString += " " + types;
+
+            finalAnswerString += "\"";
+            saveAnswerToVector(finalAnswerString);
+            break;
+        }
+        case 48: { //TYPE: DNSKEY
+            struct DNS_DNSKEY_DATA *dnskeyData = (struct DNS_DNSKEY_DATA *) (answer.Rdata);
+
+            finalAnswerString =
+                    answer.DataName + " DNSKEY " + "\"";
+
+            std::string flags = "0x";
+            int i = 0;
+            while (i < 2) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                flags += buff;
+                i++;
+            }
+            finalAnswerString += flags;
+            finalAnswerString += " " + std::to_string(dnskeyData->Protocol);
+            finalAnswerString += " " + std::to_string(dnskeyData->Algorithm) + " ";
+
+            std::string publicKey;
+            i = sizeof(DNS_DNSKEY_DATA);
+            while (i < ntohs(answer.Data->DataLength)) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                publicKey += buff;
+                i++;
+            }
+            finalAnswerString += publicKey;
 
             finalAnswerString += "\"";
             saveAnswerToVector(finalAnswerString);
@@ -559,6 +635,9 @@ std::string dnsTypeNameById(int type) {
         case 35:
             name = "NAPTR";
             break;
+        case 43:
+            name = "DS";
+            break;
         case 46:
             name = "RRSIG";
             break;
@@ -591,7 +670,6 @@ void parseDNSPacket(const unsigned char *packet, bool isTCP) {
 
     dnsHeader = (struct DNS_HEADER *) (packet);
     answersCount = ntohs(dnsHeader->AnswerCount);
-    printf("%i\n", ntohs(dnsHeader->AnswerCount));
     if (answersCount > 0) {
         const unsigned char *data =
                 packet + sizeof(dnsHeader) + sizeof(DNS_QUESTION);
