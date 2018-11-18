@@ -1,0 +1,23 @@
+.TH DNS-EXPORT 1
+.SH NAME
+dns-export \- Exports DNS informations.
+.SH SYNOPSIS
+.B dns-export
+[\fB\-r\fR \f file.pcap\fR]
+[\fB\-i\fR \f interface\fR]
+[\fB\-s\fR \f syslog-server\fR]
+[\fB\-t\fR \f seconds\fR]
+.SH DESCRIPTION
+.B dns-export
+processes DNS packets from .pcap file or interface. Sends data to syslog server or prints them to STDOUT.
+.B There is no support for fragmented packets and program may crash when it encounters fragmented packet.
+.SH OPTIONS
+.TP
+.IP \fB\-r\fR \f
+Path to the pcap file to process. Can not be used together with -i option.
+.IP \fB\-i\fR \f
+Interface to sniff on for DNS packets. Can not be used together with -r option.
+.IP \fB\-f\fR \f
+IPv4/IPv6 or hostname of syslog server.
+.IP \fB\-t\fR \f
+Periodic time for sending data to syslog server, in seconds.

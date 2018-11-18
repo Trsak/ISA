@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "ERROR: Option -t can't be used together with option -r!\n");
         return 1;
     } else if (!pcapFileSet && !interfaceSet && !syslogServerSet && !isTimeSet) {
-        fprintf(stdout, "No arguments specified!\n");
+        fprintf(stdout, "No arguments specified.\n");
         return 0;
     } else if (!pcapFileSet && !interfaceSet) {
         fprintf(stderr, "ERROR: You have to specify -r or -i option!\n");
@@ -350,7 +350,7 @@ void printAllStatsToStdout() {
  * @param header Packet header
  * @param packet Packet buffer
  *
- * Function called for every packet to proccess.
+ * Function called for every packet to process.
  */
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     (void) args;

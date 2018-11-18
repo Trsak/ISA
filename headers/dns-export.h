@@ -80,7 +80,7 @@ void sigusr1SignalHandler(int signum);
  * @param header Packet header
  * @param packet Packet buffer
  *
- * Function called for every packet to proccess.
+ * Function called for every packet to process.
  */
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 
