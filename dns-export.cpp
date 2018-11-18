@@ -1,7 +1,7 @@
 /**
  * @file dns-export.cpp
  * @author Petr Sopf (xsopfp00)
- * @brief Main file for parsing arguments and callling functions based on options set
+ * @brief Main program file, contains definitions of all functions
  */
 
 #include <iostream>
