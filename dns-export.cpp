@@ -324,10 +324,10 @@ void sendAllStatsToSyslog() {
 
         //Send message based on IP protocol
         if (sysServer.type == SYSLOG_IPV4) {
-            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv4,
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr *) &syslogServerAddrv4,
                    sizeof(syslogServerAddrv4));
         } else if (sysServer.type == SYSLOG_IPV6) {
-            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv6,
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr *) &syslogServerAddrv6,
                    sizeof(syslogServerAddrv6));
         }
     }
@@ -413,14 +413,15 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
  * @return Count of given answer
  * @param answer
  */
-int getAnswerCount(std::string answer) {
+bool isAnswerAlreadyInVector(std::string answer) {
     for (vector<Answer>::reverse_iterator i = answersVector.rbegin(); i != answersVector.rend(); ++i) {
         if (answer.compare(i->stringAnswer) == 0) {
-            return 1 + i->count;
+            i->count += 1;
+            return true;
         }
     }
 
-    return 0;
+    return false;
 }
 
 /**
@@ -430,10 +431,12 @@ int getAnswerCount(std::string answer) {
  * Simply saves given answer to vector with all answers.
  */
 void saveAnswerToVector(std::string answer) {
-    Answer finalAnswer;
-    finalAnswer.stringAnswer = answer;
-    finalAnswer.count = getAnswerCount(answer);
-    answersVector.push_back(finalAnswer);
+    if (!isAnswerAlreadyInVector(answer)) {
+        Answer finalAnswer;
+        finalAnswer.stringAnswer = answer;
+        finalAnswer.count = 1;
+        answersVector.push_back(finalAnswer);
+    }
 }
 
 /**
@@ -643,8 +646,27 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             saveAnswerToVector(finalAnswerString);
             break;
         }
-        default:
+        default: {
+            finalAnswerString =
+                    answer.DataName + " " + dnsTypeNameById(answer_type);
+
+            if (std::to_string(answer_type) == dnsTypeNameById(answer_type)) {
+                break;
+            }
+
+            int i = 0;
+            std::string types;
+            char buff[100];
+            while (i < ntohs(answer.Data->DataLength)) {
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                types += buff;
+                i++;
+            }
+            finalAnswerString += " " + types;
+
+            saveAnswerToVector(finalAnswerString);
             break;
+        }
     }
 }
 
@@ -742,14 +764,19 @@ void parseDNSPacket(const unsigned char *packet, bool isTCP) {
 
     dnsHeader = (struct DNS_HEADER *) (packet);
     answersCount = ntohs(dnsHeader->AnswerCount);
+    questionsCount = ntohs(dnsHeader->QuestionCount);
+
+    //Check for fragmented packet
+    if (isTCP && answersCount > 50) {
+        return;
+    }
+
     if (answersCount > 0) {
         const unsigned char *data =
                 packet + sizeof(dnsHeader) + sizeof(DNS_QUESTION);
 
         const unsigned char *answers = data;
         //We have to skip all Questions in packet
-        questionsCount = ntohs(dnsHeader->QuestionCount);
-
         int QNameLen = 0;
         while (questionsCount > 0) {
             while (data[QNameLen] != 0) {
@@ -761,7 +788,14 @@ void parseDNSPacket(const unsigned char *packet, bool isTCP) {
         }
 
         struct DNS_RECORD allAnswers[answersCount];
-        parseDNS(allAnswers, answersCount, answers, packet);
+
+        try {
+            parseDNS(allAnswers, answersCount, answers, packet);
+        }
+        catch (const std::out_of_range &e) {
+            return;
+        }
+
         for (int i = 0; i < answersCount; i++) {
             saveAnswer(allAnswers[i], packet);
         }
@@ -915,8 +949,8 @@ std::string nameToDnsFormat(std::string name) {
  * Explodes string into vectory by delimeter
  * @source https://stackoverflow.com/a/12967010
  */
-std::vector <std::string> explode(std::string const &s, char delim) {
-    std::vector <std::string> result;
+std::vector<std::string> explode(std::string const &s, char delim) {
+    std::vector<std::string> result;
     std::istringstream iss(s);
 
     for (std::string token; std::getline(iss, token, delim);) {
