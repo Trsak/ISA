@@ -277,6 +277,7 @@ void sendAllStatsToSyslog() {
         message += " ";
         message += hostname;
         message += " dns-export ";
+        message += " - - - ";
         message += answer.stringAnswer;
         message += " ";
         message += std::to_string(answer.count);
