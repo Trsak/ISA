@@ -78,6 +78,18 @@ struct DNS_QUESTION {
     unsigned short QuestionClass;
 };
 
+#pragma pack(push, 1)
+struct DNS_RRSIG_DATA {
+    int TypeCovered : 16;
+    int Algorithm : 8;
+    int Labels : 8;
+    long int OriginalTTL : 32;
+    long int SignatureExpiration : 32;
+    long int SignatureInception : 32;
+    int KeyTag : 16;
+};
+#pragma pack(pop)
+
 struct DNS_MX_DATA {
     int Preference : 16;
 };
@@ -120,6 +132,8 @@ void sendAllStatsToSyslog();
 void printAllStatsToStdout();
 
 void syslogThreadSend();
+
+std::string dnsTypeNameById(int type);
 
 std::string name_to_dns_format(std::string name);
 

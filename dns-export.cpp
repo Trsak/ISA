@@ -21,6 +21,7 @@
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <sstream>
 #include <algorithm>
 #include <iostream>
@@ -318,39 +319,52 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
 
     struct ether_header *etherHeader;
     struct ip *myIP;
+    struct ip6_hdr *myIP6;
     const u_char *tcpHeader;
     const u_char *payload;
     int tcpHeaderLength;
+    char transferProtocol;
     u_int sizeIP;
     etherHeader = (struct ether_header *) packet;
 
     switch (ntohs(etherHeader->ether_type)) {
         case ETHERTYPE_IP: //IPv4
+        {
             myIP = (struct ip *) (packet + SIZE_ETHERNET);
             sizeIP = myIP->ip_hl * 4;
+            transferProtocol = myIP->ip_p;
+            break;
+        }
+        case ETHERTYPE_IPV6: //IPv6
+        {
+            myIP6 = (struct ip6_hdr *) (packet + SIZE_ETHERNET);
+            sizeIP = 40;
+            transferProtocol = (char) myIP6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+            break;
+        }
+    }
 
-            switch (myIP->ip_p) {
-                case 6: //TCP protocol
-                {
-                    if (header->caplen > 1500) break; //Fragmented TCP packet
-                    tcpHeader = packet + SIZE_ETHERNET + sizeIP;
-                    tcpHeaderLength = ((*(tcpHeader + 12)) & 0xF0) >> 4;
-                    tcpHeaderLength = tcpHeaderLength * 4;
+    switch (transferProtocol) {
+        case 6: //TCP protocol
+        {
+            if (header->caplen > 1500) break; //Fragmented TCP packet
+            tcpHeader = packet + SIZE_ETHERNET + sizeIP;
+            tcpHeaderLength = ((*(tcpHeader + 12)) & 0xF0) >> 4;
+            tcpHeaderLength = tcpHeaderLength * 4;
 
-                    int totalHeadersSize = SIZE_ETHERNET + sizeIP + tcpHeaderLength;
-                    payload = packet + totalHeadersSize;
+            int totalHeadersSize = SIZE_ETHERNET + sizeIP + tcpHeaderLength;
+            payload = packet + totalHeadersSize;
 
-                    parseDNSPacket(payload, true);
-                    break;
-                }
-                case 17: //UDP protocol
-                {
-                    parseDNSPacket(packet + SIZE_ETHERNET + sizeIP + 8, false);
-                    break;
-                }
-                default:
-                    break;
-            }
+            parseDNSPacket(payload, true);
+            break;
+        }
+        case 17: //UDP protocol
+        {
+            parseDNSPacket(packet + SIZE_ETHERNET + sizeIP + 8, false);
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -461,14 +475,110 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             saveAnswerToVector(finalAnswerString);
             break;
         }
-        case 48: { //TYPE: DNSKEY
-            printf("\nYAYA\n");
-            exit(0);
+        case 46: { //TYPE: RRSIG
+            struct DNS_RRSIG_DATA *rrsigData = (struct DNS_RRSIG_DATA *) (answer.Rdata);
+
+            std::string typeCovered = dnsTypeNameById(htons(rrsigData->TypeCovered));
+            finalAnswerString =
+                    answer.DataName + " RRSIG " + "\"" + typeCovered;
+            finalAnswerString += " " + std::to_string(rrsigData->Algorithm);
+            finalAnswerString += " " + std::to_string(rrsigData->Labels);
+            finalAnswerString += " " + std::to_string(ntohl(rrsigData->OriginalTTL));
+            finalAnswerString += " " + std::to_string(ntohl(rrsigData->SignatureExpiration));
+            finalAnswerString += " " + std::to_string(ntohl(rrsigData->SignatureInception));
+            finalAnswerString += " " + std::to_string(htons(rrsigData->KeyTag));
+
+            int namePos = sizeof(DNS_RRSIG_DATA);
+            std::string signerName = parse_name(answer.Rdata + namePos, links_start, &nameLen, &size);
+            finalAnswerString += " " + signerName;
+
+            std::string signature;
+            int i = namePos + size - 1;
+            while (i < ntohs(answer.Data->DataLength)) {
+                char buff[100];
+                snprintf(buff, sizeof(buff), "%02x", answer.Rdata[i]);
+                signature += buff;
+                i++;
+            }
+            finalAnswerString += " " + signature;
+
+            finalAnswerString += "\"";
+            saveAnswerToVector(finalAnswerString);
             break;
         }
         default:
             break;
     }
+}
+
+std::string dnsTypeNameById(int type) {
+    std::string name;
+    switch (type) {
+        case 1:
+            name = "A";
+            break;
+        case 2:
+            name = "NS";
+            break;
+        case 5:
+            name = "CNAME";
+            break;
+        case 6:
+            name = "SOA";
+            break;
+        case 12:
+            name = "PTR";
+            break;
+        case 15:
+            name = "MX";
+            break;
+        case 16:
+            name = "TXT";
+            break;
+        case 17:
+            name = "RP";
+            break;
+        case 18:
+            name = "AFSDB";
+            break;
+        case 24:
+            name = "SIG";
+            break;
+        case 25:
+            name = "KEY";
+            break;
+        case 26:
+            name = "AAAA";
+            break;
+        case 29:
+            name = "LOC";
+            break;
+        case 33:
+            name = "SRV";
+            break;
+        case 35:
+            name = "NAPTR";
+            break;
+        case 46:
+            name = "RRSIG";
+            break;
+        case 47:
+            name = "NSEC";
+            break;
+        case 48:
+            name = "DNSKEY";
+            break;
+        case 49:
+            name = "DHCID";
+            break;
+        case 50:
+            name = "NSEC3";
+            break;
+        default:
+            name = std::to_string(type);
+    }
+
+    return name;
 }
 
 void parseDNSPacket(const unsigned char *packet, bool isTCP) {
