@@ -38,6 +38,13 @@
 
 using namespace std;
 
+/**
+ * @return void
+ * @param argc Number of arguments
+ * @param argv Array of arguments
+ *
+ * Main program function
+ */
 int main(int argc, char **argv) {
     //Register signals
     signal(SIGINT, sigtermSignalHandler);
@@ -58,6 +65,7 @@ int main(int argc, char **argv) {
     int c;
     opterr = 0;
 
+    //Parse program arguments
     while ((c = getopt(argc, argv, "r:i:s:t:")) != -1) {
         switch (c) {
             case 'r':
@@ -112,11 +120,11 @@ int main(int argc, char **argv) {
 
     //Create syslog server connection
     if (syslogServerSet) {
-        if (inet_pton(AF_INET, syslogServer.c_str(), &(sysServer.ipv4.sin_addr)) != 0) {
+        if (inet_pton(AF_INET, syslogServer.c_str(), &(sysServer.ipv4.sin_addr)) != 0) { //Is IPv4
             sysServer.type = SYSLOG_IPV4;
-        } else if (inet_pton(AF_INET6, syslogServer.c_str(), &(sysServer.ipv6.sin6_addr)) != 0) {
+        } else if (inet_pton(AF_INET6, syslogServer.c_str(), &(sysServer.ipv6.sin6_addr)) != 0) { //Is IPv6
             sysServer.type = SYSLOG_IPV6;
-        } else {
+        } else { //Is probably hostname
             struct hostent *syslogHostent = gethostbyname(syslogServer.c_str());
             if (!syslogHostent || syslogHostent->h_addr_list[0] == NULL) {
                 fprintf(stderr, "ERROR: Syslog server must be IPv4, IPv6 or hostname!\n");
@@ -125,9 +133,9 @@ int main(int argc, char **argv) {
 
             char *address = inet_ntoa((struct in_addr) *((struct in_addr *) syslogHostent->h_addr_list[0]));
 
-            if (inet_pton(AF_INET, address, &(sysServer.ipv4.sin_addr)) != 0) {
+            if (inet_pton(AF_INET, address, &(sysServer.ipv4.sin_addr)) != 0) { //Hostname to IPv4
                 sysServer.type = SYSLOG_IPV4;
-            } else if (inet_pton(AF_INET6, address, &(sysServer.ipv6.sin6_addr)) != 0) {
+            } else if (inet_pton(AF_INET6, address, &(sysServer.ipv6.sin6_addr)) != 0) { //Hostname to IPv6
                 sysServer.type = SYSLOG_IPV6;
             } else {
                 fprintf(stderr, "ERROR: Syslog server must be IPv4, IPv6 or hostname!\n");
@@ -135,6 +143,7 @@ int main(int argc, char **argv) {
             }
         }
 
+        //Create syslog server socket
         if (sysServer.type == SYSLOG_IPV4) {
             fd = socket(AF_INET, SOCK_DGRAM, 0);
             if (fd < 0) {
@@ -194,11 +203,13 @@ int main(int argc, char **argv) {
     struct bpf_program filter;
     char filterString[] = "port 53"; //Only DNS port
 
+    //Compile filter
     if (pcap_compile(handler, &filter, filterString, 0, ip) == -1) {
         fprintf(stderr, "ERROR: Bad filter - %s\n", pcap_geterr(handler));
         exit(1);
     }
 
+    //Set filter
     if (pcap_setfilter(handler, &filter) == -1) {
         fprintf(stderr, "ERROR: Couldn't set filter - %s\n", pcap_geterr(handler));
         exit(1);
@@ -212,7 +223,7 @@ int main(int argc, char **argv) {
         pcap_close(handler);
     }
 
-    if (!syslogServerSet) {
+    if (!syslogServerSet) { //Syslog server is not set, print to STDOUT
         printAllStatsToStdout();
     } else {
         sendAllStatsToSyslog();
@@ -226,6 +237,12 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+/**
+ * @return void
+ * @param signum Signal number
+ *
+ * Used to handle SIGTERM signal
+ */
 void sigtermSignalHandler(int signum) {
     (void) signum;
 
@@ -243,26 +260,44 @@ void sigtermSignalHandler(int signum) {
     exit(0);
 }
 
+/**
+ * @return void
+ * @param signum Signal number
+ *
+ * Used to handle SIGUSR1 signal
+ */
 void sigusr1SignalHandler(int signum) {
     (void) signum;
-    printAllStatsToStdout();
+    printAllStatsToStdout(); //Just print all answers to STDOUT
 }
 
+/**
+ * @return void
+ *
+ * Function to handle syslog thread.
+ */
 void syslogThreadSend() {
     while (!stopFlag) {
-        this_thread::sleep_for(std::chrono::seconds(statsTime));
-        sendAllStatsToSyslog();
-        if (stopFlag) {
+        this_thread::sleep_for(std::chrono::seconds(statsTime)); //Wait for -t secons
+        sendAllStatsToSyslog(); //Send all data to syslog server
+        if (stopFlag) { //Terminate if stop flag is True
             std::terminate();
         }
     }
 }
 
+/**
+ * @return void
+ *
+ * Loops through all answers and sends them to syslog server.
+ */
 void sendAllStatsToSyslog() {
+    //Get hostname
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, HOST_NAME_MAX);
 
     for (Answer answer : answersVector) {
+        //Get current time
         timeval curTime;
         gettimeofday(&curTime, NULL);
         int milli = curTime.tv_usec / 1000;
@@ -271,6 +306,7 @@ void sendAllStatsToSyslog() {
         char currentTime[84] = "";
         sprintf(currentTime, "%s.%dZ", buffer, milli);
 
+        //Create message
         std::string message;
         message += "<134>1 ";
         message += currentTime;
@@ -286,6 +322,7 @@ void sendAllStatsToSyslog() {
             message += '\0';
         }
 
+        //Send message based on IP protocol
         if (sysServer.type == SYSLOG_IPV4) {
             sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv4,
                    sizeof(syslogServerAddrv4));
@@ -296,21 +333,25 @@ void sendAllStatsToSyslog() {
     }
 }
 
+/**
+ * @return void
+ *
+ * Loops through all answers and print them to STDOUT.
+ */
 void printAllStatsToStdout() {
     for (Answer answer : answersVector) {
         printf("%s %i\n", answer.stringAnswer.c_str(), answer.count);
     }
 }
 
-static void print_buf(const char *title, const unsigned char *buf, size_t buf_len) {
-    size_t i = 0;
-    fprintf(stdout, "%s\n", title);
-    for (i = 0; i < buf_len; ++i)
-        fprintf(stdout, "%02X%s", buf[i],
-                (i + 1) % 16 == 0 ? "\r\n" : " ");
-
-}
-
+/**
+ * @return void
+ * @param args Arguments
+ * @param header Packet header
+ * @param packet Packet buffer
+ *
+ * Function called for every packet to proccess.
+ */
 void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     (void) args;
     (void) header;
@@ -336,7 +377,7 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
         case ETHERTYPE_IPV6: //IPv6
         {
             myIP6 = (struct ip6_hdr *) (packet + SIZE_ETHERNET);
-            sizeIP = 40;
+            sizeIP = 40; //Fixed size
             transferProtocol = (char) myIP6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
             break;
         }
@@ -346,6 +387,8 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
         case 6: //TCP protocol
         {
             if (header->caplen > 1500) break; //Fragmented TCP packet
+
+            //Get TCP header size
             tcpHeader = packet + SIZE_ETHERNET + sizeIP;
             tcpHeaderLength = ((*(tcpHeader + 12)) & 0xF0) >> 4;
             tcpHeaderLength = tcpHeaderLength * 4;
@@ -366,6 +409,10 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
     }
 }
 
+/**
+ * @return Count of given answer
+ * @param answer
+ */
 int getAnswerCount(std::string answer) {
     for (vector<Answer>::reverse_iterator i = answersVector.rbegin(); i != answersVector.rend(); ++i) {
         if (answer.compare(i->stringAnswer) == 0) {
@@ -376,6 +423,12 @@ int getAnswerCount(std::string answer) {
     return 0;
 }
 
+/**
+ * @return void
+ * @param answer
+ *
+ * Simply saves given answer to vector with all answers.
+ */
 void saveAnswerToVector(std::string answer) {
     Answer finalAnswer;
     finalAnswer.stringAnswer = answer;
@@ -383,6 +436,13 @@ void saveAnswerToVector(std::string answer) {
     answersVector.push_back(finalAnswer);
 }
 
+/**
+ * @return void
+ * @param answer Answer DNS record
+ * @param links_start Links buffer
+ *
+ * Saves answer to global vector.
+ */
 void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
     int answer_type = ntohs(answer.Data->DataType);
     int nameLen = 0;
@@ -588,6 +648,10 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
     }
 }
 
+/**
+ * @return string DNS Name
+ * @param type DNS type ID
+ */
 std::string dnsTypeNameById(int type) {
     std::string name;
     switch (type) {
@@ -661,6 +725,13 @@ std::string dnsTypeNameById(int type) {
     return name;
 }
 
+/**
+ * @return void
+ * @param packet Packet buffer
+ * @param isTCP True if packet is TSP
+ *
+ * Used to parse DNS packets.
+ */
 void parseDNSPacket(const unsigned char *packet, bool isTCP) {
     int answersCount, questionsCount;
     struct DNS_HEADER *dnsHeader;
@@ -697,6 +768,15 @@ void parseDNSPacket(const unsigned char *packet, bool isTCP) {
     }
 }
 
+/**
+ * @return void
+ * @param allAnswers Array for storing answers
+ * @param count Count of answers
+ * @param data Packet buffer
+ * @param links_start Buffer for links
+ *
+ * Used to parse DNS answers.
+ */
 void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *data, const unsigned char *links_start) {
     int nameLen = 0;
     int size = 0;
@@ -719,6 +799,13 @@ void parseDNS(struct DNS_RECORD *allAnswers, int count, const unsigned char *dat
     }
 }
 
+/**
+ * @return string Parsed name
+ * @param data Buffer
+ * @param links_start Buffer for links
+ * @param nameLen Name len
+ * @param size Name size
+ */
 std::string parseName(const unsigned char *data, const unsigned char *links_start, int *nameLen, int *size) {
     bool link = false;
     bool linkDone = false;
@@ -777,6 +864,10 @@ std::string parseName(const unsigned char *data, const unsigned char *links_star
     return name;
 }
 
+/**
+ * @return string Name
+ * @param dns_name Name in DNS format
+ */
 std::string nameFromDnsFormat(std::string dns_name) {
     std::string name;
     unsigned int position = 0;
@@ -802,6 +893,10 @@ std::string nameFromDnsFormat(std::string dns_name) {
     return name;
 }
 
+/**
+ * @return string Name in DNS format
+ * @param name Name
+ */
 std::string nameToDnsFormat(std::string name) {
     std::string dns_name;
 
