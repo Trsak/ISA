@@ -170,11 +170,15 @@ int main(int argc, char **argv) {
         }
     }
 
+    stopFlag = false;
     //Create thread sending stats to syslog
     if (syslogServerSet && interfaceSet) {
-        stopFlag = false;
         syslogThread = std::thread(syslogThreadSend);
     }
+
+    //Create Thread seding output
+    printFlag = false;
+    printOutputThread = std::thread(printAllStatsToStdout);
 
     //Create error buff
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -225,14 +229,18 @@ int main(int argc, char **argv) {
     }
 
     if (!syslogServerSet) { //Syslog server is not set, print to STDOUT
-        printAllStatsToStdout();
+        printFlag = true;
     } else {
         sendAllStatsToSyslog();
     }
 
+    stopFlag = true;
     if (syslogThread.joinable()) {
-        stopFlag = true;
         syslogThread.join();
+    }
+
+    if (printOutputThread.joinable()) {
+        printOutputThread.join();
     }
 
     return 0;
@@ -247,10 +255,14 @@ int main(int argc, char **argv) {
 void sigtermSignalHandler(int signum) {
     (void) signum;
 
+    stopFlag = true;
     //Detach thread and signal it to end
     if (syslogThread.joinable()) {
-        stopFlag = true;
         syslogThread.detach();
+    }
+
+    if (printOutputThread.joinable()) {
+        printOutputThread.detach();
     }
 
     //Close handler
@@ -269,7 +281,7 @@ void sigtermSignalHandler(int signum) {
  */
 void sigusr1SignalHandler(int signum) {
     (void) signum;
-    printAllStatsToStdout(); //Just print all answers to STDOUT
+    printFlag = true; //Just print all answers to STDOUT
 }
 
 /**
@@ -281,6 +293,28 @@ void syslogThreadSend() {
     while (!stopFlag) {
         this_thread::sleep_for(std::chrono::seconds(statsTime)); //Wait for -t secons
         sendAllStatsToSyslog(); //Send all data to syslog server
+        if (stopFlag) { //Terminate if stop flag is True
+            std::terminate();
+        }
+    }
+}
+
+/**
+ * @return void
+ *
+ * Loops through all answers and print them to STDOUT.
+ */
+void printAllStatsToStdout() {
+    while (!stopFlag) {
+        if (printFlag) {
+            printFlag = false;
+            answersMutex.lock();
+            for (Answer answer : answersVector) {
+                printf("%s %i\n", answer.stringAnswer.c_str(), answer.count);
+            }
+            answersMutex.unlock();
+        }
+
         if (stopFlag) { //Terminate if stop flag is True
             std::terminate();
         }
@@ -335,19 +369,6 @@ void sendAllStatsToSyslog() {
         }
     }
 
-    answersMutex.unlock();
-}
-
-/**
- * @return void
- *
- * Loops through all answers and print them to STDOUT.
- */
-void printAllStatsToStdout() {
-    answersMutex.lock();
-    for (Answer answer : answersVector) {
-        printf("%s %i\n", answer.stringAnswer.c_str(), answer.count);
-    }
     answersMutex.unlock();
 }
 

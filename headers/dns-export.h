@@ -23,11 +23,13 @@ pcap_t *handler;
 //Mutex to access answers vector
 std::mutex answersMutex;
 
-//Atomic boolean
+//Atomic booleans
 std::atomic<bool> stopFlag;
+std::atomic<bool> printFlag;
 
 //Thread for sending syslog messages
 std::thread syslogThread;
+std::thread printOutputThread;
 
 //Program arguments
 int statsTime;
