@@ -25,6 +25,7 @@ std::mutex answersMutex;
 
 //Atomic booleans
 std::atomic<bool> stopFlag;
+std::atomic<bool> stopPrintFlag;
 std::atomic<bool> printFlag;
 
 //Thread for sending syslog messages
@@ -129,6 +130,13 @@ void printAllStatsToStdout();
  * Function to handle syslog thread.
  */
 void syslogThreadSend();
+
+/**
+ * @return void
+ *
+ * Function to handle thread for printing data to stdout.
+ */
+void printThread();
 
 /**
  * @return void
