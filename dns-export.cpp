@@ -507,7 +507,7 @@ void saveAnswer(struct DNS_RECORD answer, const unsigned char *links_start) {
             sData += std::to_string(ntohl(soaData->ExpireLimit)) + " ";
             sData += std::to_string(ntohl(soaData->MinimumTTL));
 
-            finalAnswerString = answer.DataName + " SOA " + "\"" + soa + " " + mailboxString + sData + "\"";
+            finalAnswerString = answer.DataName + " SOA " + "\"" + soa + " " + mailboxString + " " + sData + "\"";
             saveAnswerToVector(finalAnswerString);
             break;
         }
