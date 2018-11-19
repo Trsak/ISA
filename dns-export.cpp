@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <atomic>
+#include <mutex>
 
 #include "headers/dns-export.h"
 
@@ -296,6 +297,8 @@ void sendAllStatsToSyslog() {
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, HOST_NAME_MAX);
 
+    answersMutex.lock();
+
     for (Answer answer : answersVector) {
         //Get current time
         timeval curTime;
@@ -331,6 +334,8 @@ void sendAllStatsToSyslog() {
                    sizeof(syslogServerAddrv6));
         }
     }
+
+    answersMutex.unlock();
 }
 
 /**
@@ -339,9 +344,11 @@ void sendAllStatsToSyslog() {
  * Loops through all answers and print them to STDOUT.
  */
 void printAllStatsToStdout() {
+    answersMutex.lock();
     for (Answer answer : answersVector) {
         printf("%s %i\n", answer.stringAnswer.c_str(), answer.count);
     }
+    answersMutex.unlock();
 }
 
 /**
@@ -416,7 +423,9 @@ void parsePackets(u_char *args, const struct pcap_pkthdr *header, const u_char *
 bool isAnswerAlreadyInVector(std::string answer) {
     for (vector<Answer>::reverse_iterator i = answersVector.rbegin(); i != answersVector.rend(); ++i) {
         if (answer.compare(i->stringAnswer) == 0) {
+            answersMutex.lock();
             i->count += 1;
+            answersMutex.unlock();
             return true;
         }
     }
@@ -435,7 +444,9 @@ void saveAnswerToVector(std::string answer) {
         Answer finalAnswer;
         finalAnswer.stringAnswer = answer;
         finalAnswer.count = 1;
+        answersMutex.lock();
         answersVector.push_back(finalAnswer);
+        answersMutex.unlock();
     }
 }
 

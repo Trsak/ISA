@@ -1,0 +1,36 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage[czech]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[text={17cm, 24cm}, lmargin=2cm, tmargin=3cm]{geometry}
+\bibliographystyle{czplain}
+\usepackage{url}
+\DeclareUrlCommand\url{\def\UrlLeft{<}\def\UrlRight{>} \urlstyle{tt}}
+
+\begin{document}
+    \begin{titlepage}
+        \begin{center}
+            \textsc{\Huge Vysoké učení technické v~Brně}\\[0.6em]
+            \textsc{\huge Fakulta informačních technologií}\\
+            \vspace{\stretch{0.382}}
+            {\LARGE Dokumentace k projektu} \\[0.3em] {\Huge Export DNS informací pomocí protokolu Syslog}\\
+            \vspace{\stretch{0.618}}
+        \end{center}
+        {\Large \today \hfill
+        Petr Šopf (xsopfp00)}
+    \end{titlepage}
+    
+ 
+\newpage
+  \tableofcontents
+\newpage
+
+\section{Historie programování}
+Nejstarším známým kalkulátorem je mechanismus z~Antikythéry pocházející ze starověkého Řecka. Vyroben byl přibližně v~roce 150-100 př. n. l. a uměl předpovídat zatmění Měsíce a Slunce \cite{Solla:AnAncientGreekComputer}. Al-Džazárí v~roce 1206 sepsal knihu \emph{Kniha znalostí důmyslných mechanických zařízení}, ve které popsal programovatelný automat bubeníka \cite{Dzazari:KnihaZnalostiDumyslnychMechanickychZarizeni}. Nových rozměrů začalo programování nabývat v~roce 1801, kdy Joseph Marie Jacquard dokázal řídit svůj tkalcovský stav za pomocí děrných štítků \cite{Essinger:BirthOfTheInformationAge}. Kolem roku 1830 poté využil děrné štítky i Charles Babbage pro svůj analytický stroj \cite{ThoughtCo:TheFirstComputer}. První známou ženou zabývající se programováním byla Ada Lovelace \cite{Biography:AdaLovelaceBiography}.
+
+Prvním vysokoúrovňovým programovacím jazykem byl Plankalkül, který vytvořil německý inženýr Konrad Zuse v~průběhu 2. světové války v~letech 1942 až 1945 \cite{Bauer:Plankalkul}. Tento jazyk byl určený pro potřeby nacistického Německa. Prvním komerčně dostupným programovacím jazykem byl jazyk FORTAN, vytvořen v~roce 1956 zaměstnancem IBM Johnem Backusem \cite{Wikipedie:Fortan}.
+
+\section{Programování dnes}
+Porovnání dnešních moderních programovacích jazyků a těch starších popsal ve své bakalářské práci z~roku 2010 Vavruška Pavel \cite{Thesis:Vavruska}. Vzhledem k~rychlému vývoji hardware je v~současné době kladen i velký důraz na paralelní programování \cite{ComputingInScienceEngineering:Concurrency}. Programování se rozšiřuje stále mezi více lidí a alespoň základy se vyučují na většině středních škol. Například programování malých robotů za pomocí robotických stavebnic nabízí i některé základní školy \cite{Thesis:Fiser}.
+\newpage
+\bibliography{citace}
+\end{document}

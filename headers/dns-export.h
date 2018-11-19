@@ -20,6 +20,9 @@ int fd;
 //Handler for pcap file or interface
 pcap_t *handler;
 
+//Mutex to access answers vector
+std::mutex answersMutex;
+
 //Atomic boolean
 std::atomic<bool> stopFlag;
 
