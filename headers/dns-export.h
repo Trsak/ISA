@@ -68,9 +68,9 @@ std::vector <Answer> answersVector;
  * @return void
  * @param signum Signal number
  *
- * Used to handle SIGTERM signal
+ * Used to handle SIGINT signal
  */
-void sigtermSignalHandler(int signum);
+void sigintSignalHandler(int signum) ;
 
 /**
  * @return void

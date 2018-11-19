@@ -48,7 +48,7 @@ using namespace std;
  */
 int main(int argc, char **argv) {
     //Register signals
-    signal(SIGINT, sigtermSignalHandler);
+    signal(SIGINT, sigintSignalHandler);
     signal(SIGUSR1, sigusr1SignalHandler);
 
     //Options variables
@@ -252,9 +252,9 @@ int main(int argc, char **argv) {
  * @return void
  * @param signum Signal number
  *
- * Used to handle SIGTERM signal
+ * Used to handle SIGINT signal
  */
-void sigtermSignalHandler(int signum) {
+void sigintSignalHandler(int signum) {
     (void) signum;
 
     //Detach thread and signal it to end
@@ -294,8 +294,10 @@ void sigusr1SignalHandler(int signum) {
  */
 void syslogThreadSend() {
     while (!stopFlag) {
-        this_thread::sleep_for(std::chrono::seconds(statsTime)); //Wait for -t secons
+        this_thread::sleep_for(std::chrono::seconds(statsTime)); //Wait for -t seconds
+        answersMutex.lock();
         sendAllStatsToSyslog(); //Send all data to syslog server
+        answersMutex.unlock();
     }
 }
 
@@ -337,8 +339,6 @@ void sendAllStatsToSyslog() {
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, HOST_NAME_MAX);
 
-    answersMutex.lock();
-
     for (Answer answer : answersVector) {
         //Get current time
         timeval curTime;
@@ -361,21 +361,19 @@ void sendAllStatsToSyslog() {
         message += " ";
         message += std::to_string(answer.count);
 
-        if (message.back() != '\0') {
-            message += '\0';
+        if (message.back() == '\0') {
+            message = message.substr(0, message.size() - 1);
         }
 
         //Send message based on IP protocol
         if (sysServer.type == SYSLOG_IPV4) {
-            sendto(fd, message.c_str(), message.length(), 0, (sockaddr *) &syslogServerAddrv4,
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv4,
                    sizeof(syslogServerAddrv4));
         } else if (sysServer.type == SYSLOG_IPV6) {
-            sendto(fd, message.c_str(), message.length(), 0, (sockaddr *) &syslogServerAddrv6,
+            sendto(fd, message.c_str(), message.length(), 0, (sockaddr * ) & syslogServerAddrv6,
                    sizeof(syslogServerAddrv6));
         }
     }
-
-    answersMutex.unlock();
 }
 
 /**
@@ -987,8 +985,8 @@ std::string nameToDnsFormat(std::string name) {
  * Explodes string into vectory by delimeter
  * @source https://stackoverflow.com/a/12967010
  */
-std::vector<std::string> explode(std::string const &s, char delim) {
-    std::vector<std::string> result;
+std::vector <std::string> explode(std::string const &s, char delim) {
+    std::vector <std::string> result;
     std::istringstream iss(s);
 
     for (std::string token; std::getline(iss, token, delim);) {

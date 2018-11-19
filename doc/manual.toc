@@ -1,3 +1,0 @@
-\select@language {czech}
-\contentsline {section}{\numberline {1}Historie programov\IeC {\'a}n\IeC {\'\i }}{2}
-\contentsline {section}{\numberline {2}Programov\IeC {\'a}n\IeC {\'\i } dnes}{2}
